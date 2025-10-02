@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
     name: "session",
     value: "1",
     httpOnly: true,
-    sameSite: "strict",
+    sameSite: "lax",
     secure: true,
     path: "/",
     maxAge: 2 * 60 * 60,

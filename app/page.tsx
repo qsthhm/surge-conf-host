@@ -14,6 +14,7 @@ export default function RootLoginPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ password }),
+        credentials: "include", 
       });
       if (!res.ok) throw new Error(await res.text());
       const { redirectTo } = await res.json();
