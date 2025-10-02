@@ -1,5 +1,6 @@
 "use client";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
+import { useToast } from "@/components/Toast";
 
 type Version = { ts: string; sha256: string; size: number };
 
@@ -9,10 +10,11 @@ export default function DashboardClient({ token }: { token: string }) {
     (typeof window !== "undefined" ? window.location.origin : "") + rawUrl
   )}`;
 
+  const toast = useToast();
+
   const [content, setContent] = useState("");
   const [versions, setVersions] = useState<Version[]>([]);
   const [currentSha, setCurrentSha] = useState<string>("");
-  const [msg, setMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
 
@@ -25,36 +27,69 @@ export default function DashboardClient({ token }: { token: string }) {
       setContent(json.content || "");
       setVersions(json.versions || []);
       setCurrentSha(json.currentSha || "");
-      setMsg("已加载最新内容");
     } catch (e: any) {
-      setMsg(e?.message || "加载失败");
+      toast(e?.message || "加载失败", "error");
     } finally {
       setLoading(false);
     }
   }
   useEffect(() => { loadFile(); }, [token]);
 
-  async function onUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploading(true); setMsg(null);
+  // === 上传 ===
+  async function uploadFile(file: File) {
+    setUploading(true);
     try {
       const fd = new FormData();
       fd.append("file", file);
       const res = await fetch(`/${token}/api/file`, { method: "POST", body: fd });
       if (!res.ok) throw new Error(await res.text());
-      setMsg("上传成功，已写入为最新版本");
+      toast("上传成功，已成为最新版本", "success");
       await loadFile();
     } catch (e: any) {
-      setMsg(e?.message || "上传失败");
+      toast(e?.message || "上传失败", "error");
     } finally {
       setUploading(false);
-      e.currentTarget.value = "";
     }
   }
 
+  function onFileInput(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (f) uploadFile(f);
+    e.currentTarget.value = "";
+  }
+
+  // === 拖拽上传 ===
+  const [dragActive, setDragActive] = useState(false);
+  const dzRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = dzRef.current;
+    if (!el) return;
+
+    function prevent(e: DragEvent) { e.preventDefault(); e.stopPropagation(); }
+    function onEnter(e: DragEvent) { prevent(e); setDragActive(true); }
+    function onLeave(e: DragEvent) { prevent(e); setDragActive(false); }
+    function onDrop(e: DragEvent) {
+      prevent(e); setDragActive(false);
+      const f = e.dataTransfer?.files?.[0];
+      if (f) uploadFile(f);
+    }
+
+    ["dragenter","dragover"].forEach(ev => el.addEventListener(ev, onEnter));
+    ["dragleave"].forEach(ev => el.addEventListener(ev, onLeave));
+    el.addEventListener("drop", onDrop);
+    ["dragenter","dragover","dragleave","drop"].forEach(ev => document.addEventListener(ev, prevent));
+
+    return () => {
+      ["dragenter","dragover"].forEach(ev => el.removeEventListener(ev, onEnter));
+      ["dragleave"].forEach(ev => el.removeEventListener(ev, onLeave));
+      el.removeEventListener("drop", onDrop);
+      ["dragenter","dragover","dragleave","drop"].forEach(ev => document.removeEventListener(ev, prevent));
+    };
+  }, []);
+
+  // === 保存 / 回滚 / 删除 / 复制 / 退出 ===
   async function saveText() {
-    setLoading(true); setMsg(null);
+    setLoading(true);
     try {
       const res = await fetch(`/${token}/api/file`, {
         method: "PUT",
@@ -62,10 +97,10 @@ export default function DashboardClient({ token }: { token: string }) {
         body: JSON.stringify({ content }),
       });
       if (!res.ok) throw new Error(await res.text());
-      setMsg("已保存为新版本");
+      toast("已保存为新版本", "success");
       await loadFile();
     } catch (e: any) {
-      setMsg(e?.message || "保存失败");
+      toast(e?.message || "保存失败", "error");
     } finally {
       setLoading(false);
     }
@@ -73,7 +108,7 @@ export default function DashboardClient({ token }: { token: string }) {
 
   async function rollback(sha: string) {
     if (!confirm(`确认回滚到版本 ${sha.slice(0, 12)}… 吗？`)) return;
-    setLoading(true); setMsg(null);
+    setLoading(true);
     try {
       const res = await fetch(`/${token}/api/file`, {
         method: "PUT",
@@ -81,10 +116,10 @@ export default function DashboardClient({ token }: { token: string }) {
         body: JSON.stringify({ rollbackTo: sha }),
       });
       if (!res.ok) throw new Error(await res.text());
-      setMsg("已回滚到所选版本（并记录为新版本）");
+      toast("已回滚并生成新版本", "success");
       await loadFile();
     } catch (e: any) {
-      setMsg(e?.message || "回滚失败");
+      toast(e?.message || "回滚失败", "error");
     } finally {
       setLoading(false);
     }
@@ -96,10 +131,10 @@ export default function DashboardClient({ token }: { token: string }) {
     try {
       const res = await fetch(`/${token}/api/file?sha=${encodeURIComponent(sha)}`, { method: "DELETE" });
       if (!res.ok) throw new Error(await res.text());
-      setMsg("已删除版本");
+      toast("已删除版本", "success");
       await loadFile();
     } catch (e: any) {
-      setMsg(e?.message || "删除失败");
+      toast(e?.message || "删除失败", "error");
     } finally {
       setLoading(false);
     }
@@ -112,74 +147,78 @@ export default function DashboardClient({ token }: { token: string }) {
 
   function copyRaw() {
     navigator.clipboard.writeText((window.location.origin || "") + rawUrl);
-    setMsg("已复制配置地址");
+    toast("已复制配置地址", "success");
   }
 
   return (
     <div className="space-y-6">
       {/* 顶部操作 */}
-      <div className="card p-6">
-        <div className="flex items-center justify-between gap-4 flex-wrap">
+      <div className="card p-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-semibold">Surge 配置管理</h1>
-            <p className="text-sm text-gray-500 mt-1">最新版本直链仅在操作中使用，不在页面展示。</p>
+            <h1 className="text-xl sm:text-2xl font-semibold">Surge 配置管理</h1>
+            <p className="text-sm text-base-subtle mt-1">以最新版直链进行导入，不在页面展示 token。</p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <a href={rawUrl} className="btn-ghost">下载</a>
             <button onClick={copyRaw} className="btn-ghost">复制配置地址</button>
             <a href={installUrl} className="btn-primary">一键导入到 Surge</a>
-            <button onClick={logout} className="btn-ghost">退出登录</button>
+            <button onClick={logout} className="btn-ghost">退出</button>
           </div>
         </div>
       </div>
 
-      {/* 上传 */}
-      <div className="card p-6">
+      {/* 拖拽上传 + 文件选择（移动端优先） */}
+      <div className="card p-5">
         <h2 className="text-lg font-semibold mb-3">上传 .conf 为最新版本</h2>
-        <div className="flex items-center gap-3">
-          <input type="file" accept=".conf,text/plain" onChange={onUpload} className="file:btn-ghost file:mr-4" />
-          {uploading && <span className="badge">正在上传…</span>}
+        <div ref={dzRef} className={`dropzone ${dragActive ? "dropzone--active" : ""}`}>
+          <p className="text-sm text-base-subtle mb-3">拖拽 .conf 文件到此处，或点击选择文件</p>
+          <label className="btn-ghost cursor-pointer">
+            <input type="file" className="hidden" accept=".conf,text/plain" onChange={onFileInput} />
+            选择文件
+          </label>
+          {uploading && <div className="mt-3 badge">正在上传…</div>}
         </div>
+        <p className="text-xs text-base-subtle mt-2">建议小于 1MB。上传成功后，可立即在 Surge 中导入。</p>
       </div>
 
       {/* 在线编辑（可选） */}
-      <div className="card p-6">
+      <div className="card p-5">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-lg font-semibold">在线编辑（可选）</h3>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <button onClick={saveText} className="btn-primary" disabled={loading}>保存为新版本</button>
             <button onClick={loadFile} className="btn-ghost" disabled={loading}>刷新</button>
           </div>
         </div>
         <textarea
-          className="input h-80 font-mono"
+          className="input"
           placeholder="在此粘贴或编辑你的 surge.conf 内容"
           value={content}
           onChange={(e) => setContent(e.target.value)}
         />
-        {msg && <p className="mt-3 text-sm text-gray-600">{msg}</p>}
       </div>
 
       {/* 版本历史 */}
-      <div className="card p-6">
+      <div className="card p-5">
         <h3 className="text-lg font-semibold mb-3">版本历史（最多 5 条）</h3>
         <ul className="space-y-2">
-          {versions.length === 0 && <li className="text-gray-500">暂无版本</li>}
+          {versions.length === 0 && <li className="text-base-subtle">暂无版本</li>}
           {versions.map((v) => {
             const isCurrent = v.sha256 === currentSha;
             return (
-              <li key={v.sha256} className="flex items-center justify-between border rounded-xl p-3 text-sm">
+              <li key={v.sha256} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border rounded-xl p-3">
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
                     <span className="font-mono">{v.sha256.slice(0, 12)}</span>
-                    {isCurrent && <span className="badge bg-emerald-100 text-emerald-700">当前使用</span>}
+                    {isCurrent && <span className="badge bg-neutral-900 text-white">当前使用</span>}
                   </div>
-                  <div className="text-gray-500">{new Date(v.ts).toLocaleString()} · {v.size} bytes</div>
+                  <div className="text-base-subtle">{new Date(v.ts).toLocaleString()} · {v.size} bytes</div>
                 </div>
                 <div className="flex items-center gap-2">
-                  {!isCurrent && <button onClick={() => rollback(v.sha256)} className="btn-ghost">回滚到此版本</button>}
-                  {!isCurrent && <button onClick={() => remove(v.sha256)} className="btn-ghost">删除</button>}
-                  {isCurrent && <span className="text-gray-400 text-xs">当前版本不可删除</span>}
+                  {!isCurrent && <button onClick={() => rollback(v.sha256)} className="btn-ghost">回滚</button>}
+                  {!isCurrent && <button onClick={() => remove(v.sha256)} className="btn-danger">删除</button>}
+                  {isCurrent && <span className="text-xs text-neutral-400">当前版本不可删除</span>}
                 </div>
               </li>
             );

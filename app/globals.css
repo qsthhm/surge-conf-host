@@ -2,12 +2,29 @@
 @tailwind components;
 @tailwind utilities;
 
-/* 自定义一些通用样式 */
-body { @apply bg-gray-50 text-gray-900; }
-.card { @apply bg-white rounded-2xl shadow border border-gray-100; }
-.btn  { @apply inline-flex items-center justify-center px-4 py-2 rounded-xl text-sm font-medium transition; }
-.btn-primary { @apply btn bg-brand-600 text-white hover:bg-brand-700; }
-.btn-ghost   { @apply btn border border-gray-300 bg-white hover:bg-gray-50; }
-.input { @apply w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-600; }
-textarea.input { @apply h-80 font-mono; }
-.badge { @apply inline-flex items-center gap-2 rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-600; }
+/* 细节：字体平滑、极简排版、更多留白 */
+html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+body { @apply bg-white text-base-text; }
+
+/* 容器 */
+.container-page { @apply container max-w-screen-lg; }
+
+/* 卡片与按钮（极简风） */
+.card  { @apply bg-white rounded-2xl border border-base-border shadow-card; }
+.btn   { @apply inline-flex items-center justify-center rounded-xl px-4 py-2 text-sm font-medium transition; }
+.btn-primary { @apply btn bg-black text-white hover:bg-base-hover; }
+.btn-ghost   { @apply btn border border-base-border bg-white hover:bg-base-hover; }
+.btn-danger  { @apply btn text-error-600 border border-base-border hover:bg-base-hover; }
+
+/* 表单 */
+.input { @apply w-full rounded-xl border border-base-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black; }
+textarea.input { @apply h-72 font-mono; }
+
+/* 标签与提示 */
+.badge { @apply inline-flex items-center gap-2 rounded-full bg-neutral-100 px-3 py-1 text-xs text-neutral-700; }
+
+/* 拖拽上传区 */
+.dropzone {
+  @apply rounded-2xl border-2 border-dashed border-base-border bg-white hover:bg-base-hover transition p-6 text-center cursor-pointer;
+}
+.dropzone--active { @apply border-black bg-neutral-50; }
