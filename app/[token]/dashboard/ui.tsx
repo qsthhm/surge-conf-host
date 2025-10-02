@@ -5,10 +5,17 @@ import { useToast } from "@/components/Toast";
 type Version = { ts: string; sha256: string; size: number };
 
 export default function DashboardClient({ token }: { token: string }) {
+  // 原始文件直链（相对路径）
   const rawUrl = `/${token}/api/raw`;
-  const installUrl = `surge:///install-config?url=${encodeURIComponent(
-    (typeof window !== "undefined" ? window.location.origin : "") + rawUrl
-  )}`;
+
+  // 绝对 HTTPS 地址（iOS Surge 需要可解析的完整 URL）
+  const absRawUrl =
+    typeof window !== "undefined"
+      ? new URL(rawUrl, window.location.origin).toString()
+      : rawUrl;
+
+  // Surge iOS URL Scheme（必须对整个 URL 做 encodeURIComponent）
+  const installUrl = `surge:///install-config?url=${encodeURIComponent(absRawUrl)}`;
 
   const toast = useToast();
 
@@ -33,7 +40,10 @@ export default function DashboardClient({ token }: { token: string }) {
       setLoading(false);
     }
   }
-  useEffect(() => { loadFile(); }, [token]);
+
+  useEffect(() => {
+    loadFile();
+  }, [token]);
 
   // === 上传 ===
   async function uploadFile(file: File) {
@@ -58,32 +68,41 @@ export default function DashboardClient({ token }: { token: string }) {
     e.currentTarget.value = "";
   }
 
-  // === 拖拽上传 ===
+  // === 拖拽上传（修正 TS 类型） ===
   const [dragActive, setDragActive] = useState(false);
   const dzRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     const el = dzRef.current;
     if (!el) return;
 
-    function prevent(e: DragEvent) { e.preventDefault(); e.stopPropagation(); }
-    function onEnter(e: DragEvent) { prevent(e); setDragActive(true); }
-    function onLeave(e: DragEvent) { prevent(e); setDragActive(false); }
-    function onDrop(e: DragEvent) {
-      prevent(e); setDragActive(false);
-      const f = e.dataTransfer?.files?.[0];
+    const prevent = (e: Event) => { e.preventDefault(); e.stopPropagation(); };
+    const onEnter = (e: Event) => { prevent(e); setDragActive(true); };
+    const onLeave = (e: Event) => { prevent(e); setDragActive(false); };
+    const onDrop = (e: Event) => {
+      prevent(e);
+      setDragActive(false);
+      const de = e as DragEvent;
+      const f = de.dataTransfer?.files?.[0];
       if (f) uploadFile(f);
-    }
+    };
 
-    ["dragenter","dragover"].forEach(ev => el.addEventListener(ev, onEnter));
-    ["dragleave"].forEach(ev => el.addEventListener(ev, onLeave));
-    el.addEventListener("drop", onDrop);
-    ["dragenter","dragover","dragleave","drop"].forEach(ev => document.addEventListener(ev, prevent));
+    // 绑定到 drop 区
+    el.addEventListener("dragenter", onEnter as EventListener);
+    el.addEventListener("dragover", onEnter as EventListener);
+    el.addEventListener("dragleave", onLeave as EventListener);
+    el.addEventListener("drop", onDrop as EventListener);
+
+    // 阻止浏览器默认在文档层面的拖拽行为
+    const docEvents: Array<keyof DocumentEventMap> = ["dragenter", "dragover", "dragleave", "drop"];
+    docEvents.forEach(ev => document.addEventListener(ev, prevent as EventListener));
 
     return () => {
-      ["dragenter","dragover"].forEach(ev => el.removeEventListener(ev, onEnter));
-      ["dragleave"].forEach(ev => el.removeEventListener(ev, onLeave));
-      el.removeEventListener("drop", onDrop);
-      ["dragenter","dragover","dragleave","drop"].forEach(ev => document.removeEventListener(ev, prevent));
+      el.removeEventListener("dragenter", onEnter as EventListener);
+      el.removeEventListener("dragover", onEnter as EventListener);
+      el.removeEventListener("dragleave", onLeave as EventListener);
+      el.removeEventListener("drop", onDrop as EventListener);
+      docEvents.forEach(ev => document.removeEventListener(ev, prevent as EventListener));
     };
   }, []);
 
@@ -146,7 +165,7 @@ export default function DashboardClient({ token }: { token: string }) {
   }
 
   function copyRaw() {
-    navigator.clipboard.writeText((window.location.origin || "") + rawUrl);
+    navigator.clipboard.writeText(absRawUrl);
     toast("已复制配置地址", "success");
   }
 
@@ -157,9 +176,9 @@ export default function DashboardClient({ token }: { token: string }) {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-xl sm:text-2xl font-semibold">Surge 配置管理</h1>
-            <p className="text-sm text-base-subtle mt-1">以最新版直链进行导入，不在页面展示 token。</p>
+            <p className="text-sm text-base-subtle mt-1">最新版直链用于导入，不在页面展示 token。</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <a href={rawUrl} className="btn-ghost">下载</a>
             <button onClick={copyRaw} className="btn-ghost">复制配置地址</button>
             <a href={installUrl} className="btn-primary">一键导入到 Surge</a>
