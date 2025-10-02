@@ -17,10 +17,12 @@ export async function readCurrent(): Promise<string> {
   if (!redis) throw new Error("Upstash Redis 未配置");
   return (await redis.get<string>(KEY_CURRENT)) || "";
 }
+
 export async function readVersions(): Promise<Version[]> {
   if (!redis) throw new Error("Upstash Redis 未配置");
   return (await redis.get<Version[]>(KEY_VERSIONS)) || [];
 }
+
 export async function readVersionContent(sha: string): Promise<string | null> {
   if (!redis) throw new Error("Upstash Redis 未配置");
   return (await redis.get<string>(verKey(sha))) ?? null;
@@ -41,16 +43,22 @@ export async function writeCurrent(content: string) {
   await redis.set(KEY_CURRENT, content);
   await redis.set(verKey(sha256), content);
 
-  if (latestSame) {
-    // 不新增重复
-    return;
-  }
+  // 若内容未变，不追加新版本
+  if (latestSame) return;
+
   const trimmed = [entry, ...prev].slice(0, MAX_VERSIONS);
   await redis.set(KEY_VERSIONS, trimmed);
 
-  // 清理超限版本正文
+  // 清理超限的旧版本正文
   const extras = [entry, ...prev].slice(MAX_VERSIONS);
   if (extras.length) await Promise.all(extras.map(v => redis.del(verKey(v.sha256))));
+}
+
+/** 回滚到指定版本（并按当前逻辑生成一条新版本记录） */
+export async function rollbackTo(sha: string) {
+  const content = await readVersionContent(sha);
+  if (content == null) throw new Error("目标版本内容不存在");
+  await writeCurrent(content);
 }
 
 /** 删除指定版本；禁止删除当前版本 */
